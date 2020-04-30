@@ -34,9 +34,11 @@ tx_out = send_symbol(frame_headers[MODE], MODE)
 print(len(tx_out))
 
 
-def add_delay(signal):
+def add_delay(signal, delay_len=None):
     """Adds random time delay"""
-    delay_len = random.randrange(0, len(signal))
+    if not delay_len:
+        delay_len = random.randrange(0, len(signal))
+    print("Add {} delay cycles".format(delay_len))
     delay = np.zeros(delay_len, complex)
     # delay = [rand() + rand()*1j for _ in range(delay_len)]
     return np.hstack([delay, signal])
@@ -58,13 +60,38 @@ def add_awgn(signal, snr_db):
     return signal + noise
 
 
-rx_in = add_awgn(delayed, SNRDB)
+# rx_in = add_awgn(delayed, SNRDB)
+rx_in = delayed
 # print(rx_in)
 
-plt.subplot(1, 2, 1)
-plt.plot([x.real for x in delayed], label='TX CLEAR')
-plt.plot([x.real for x in rx_in], label='TX AWGN')
-plt.subplot(1, 2, 2)
-plt.plot([x.imag for x in delayed], label='TX CLEAR')
-plt.plot([x.imag for x in rx_in], label='TX AWGN')
+
+# coarse timing offset estimation
+def delay_n_correlate(samples):
+    F = []
+
+    for m in range(len(samples)):
+        F.append(0)
+        for r in range(0, GI_NUM):
+            F[m] += samples[m-r] * samples[m-r-FFT_SIZE].conjugate()
+        F[m] = abs(F[m])
+
+    return F
+
+
+F = delay_n_correlate(rx_in)
+print(F.index(max(F)))
+plt.figure()
+plt.plot(F, label='Delay & Correlation')
+plt.axvline(x=F.index(max(F)), label=str(F.index(max(F))), color='red')
+# for i in range(0, )
+# print(np.corrcoef(rx_in[], detection_seq))
+
+# plt.figure()
+# plt.subplot(1, 2, 1)
+# plt.plot([x.real for x in delayed], label='TX CLEAR')
+# plt.plot([x.real for x in rx_in], label='TX AWGN')
+# plt.subplot(1, 2, 2)
+# plt.plot([x.imag for x in delayed], label='TX CLEAR')
+# plt.plot([x.imag for x in rx_in], label='TX AWGN')
+
 plt.show()

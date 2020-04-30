@@ -39,7 +39,7 @@ tx_out = np.hstack([tx_out, send_symbol(frame_headers[MODE], MODE)])
 def add_delay(signal, delay_len=None):
     """Adds random time delay"""
     if not delay_len:
-        delay_len = random.randrange(0, len(signal))
+        delay_len = random.randrange(0, FFT_SIZE+GI_NUM)
     print("Add {} delay cycles".format(delay_len))
     delay = np.zeros(delay_len, complex)
     # delay = [rand() + rand()*1j for _ in range(delay_len)]
@@ -72,28 +72,51 @@ def delay_n_correlate(samples):
     """Delay & correlate method"""
 
     def sample(i):
-        if i < 0:
-            return 0
-        else:
-            return samples[i]
+        return 0 if i < 0 else samples[i]
 
     F = []
 
     for m in range(len(samples)):
-        sumr = 0
+        conv = 0
         for r in range(0, GI_NUM):
-            sumr += sample(m-r) * sample(m-r-FFT_SIZE).conjugate()
-        F.append(abs(sumr))
+            conv += sample(m-r) * sample(m-r-FFT_SIZE).conjugate()
+        F.append(abs(conv))
 
     return F
 
 
-F = delay_n_correlate(rx_in)
+def mmse(samples):
+
+    def sample(i):
+        return 0 if i < 0 else samples[i]
+
+    F = []
+
+    for m in range(len(samples)):
+        sq = 0
+        sq_del = 0
+        conv = 0
+        for r in range(0, GI_NUM):
+            sq += abs(sample(m-r))**2
+            sq_del += abs(sample(m-r-FFT_SIZE))**2
+            conv += sample(m-r) * sample(m-r-FFT_SIZE).conjugate()
+        F.append(sq + sq_del - 2*abs(conv))
+
+    return F
+
+
+F1 = delay_n_correlate(rx_in)
+F2 = mmse(rx_in)
+
+print("Delay & correlate maximum at {}".format(F1.index(max(F1))))
+print("MMSE minimum at {}".format(F2.index(min(F2))))
+
 plt.figure()
-plt.plot(F, label='Delay & Correlation')
-plt.axvline(x=F.index(max(F)), label="max", color='red')
+plt.plot(F1, label='Delay & Correlation')
+plt.plot(F2, label='MMSE')
+# plt.axvline(x=F1.index(max(F1)), label="max", color='red')
 plt.axvline(x=DELAY, label="symbol start", color='green', ls='--')
-plt.axvline(x=DELAY+GI_NUM, label="GI end", color='blue', ls='--')
+# plt.axvline(x=DELAY+GI_NUM, label="GI end", color='blue', ls='--')
 plt.axvline(x=DELAY+GI_NUM+FFT_SIZE, color='green', ls='--')
 plt.axvline(x=DELAY+2*(GI_NUM+FFT_SIZE), color='green', ls='--')
 plt.legend()

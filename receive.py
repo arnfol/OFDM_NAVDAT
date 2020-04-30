@@ -11,6 +11,7 @@ Ts = Tu + Td  # full OFDM symbol length (ms)
 Ns = 15       # number of symbols in packet
 FFT_SIZE = 256
 GI_NUM = int(FFT_SIZE*Td/Tu)  # number of samplas in Guard interval
+print("Guard interval size is {}".format(GI_NUM))
 SNRDB = 25
 
 
@@ -31,7 +32,8 @@ def send_symbol(symbol, mode):
 
 
 tx_out = send_symbol(frame_headers[MODE], MODE)
-print(len(tx_out))
+# add one more symbol for better picture
+tx_out = np.hstack([tx_out, send_symbol(frame_headers[MODE], MODE)])
 
 
 def add_delay(signal, delay_len=None):
@@ -41,10 +43,10 @@ def add_delay(signal, delay_len=None):
     print("Add {} delay cycles".format(delay_len))
     delay = np.zeros(delay_len, complex)
     # delay = [rand() + rand()*1j for _ in range(delay_len)]
-    return np.hstack([delay, signal])
+    return np.hstack([delay, signal]), delay_len
 
 
-delayed = add_delay(tx_out)
+delayed, DELAY = add_delay(tx_out)
 # print(delayed)
 
 
@@ -62,29 +64,39 @@ def add_awgn(signal, snr_db):
 
 # rx_in = add_awgn(delayed, SNRDB)
 rx_in = delayed
-# print(rx_in)
+# print(len(rx_in))
 
 
 # coarse timing offset estimation
 def delay_n_correlate(samples):
+    """Delay & correlate method"""
+
+    def sample(i):
+        if i < 0:
+            return 0
+        else:
+            return samples[i]
+
     F = []
 
     for m in range(len(samples)):
-        F.append(0)
+        sumr = 0
         for r in range(0, GI_NUM):
-            F[m] += samples[m-r] * samples[m-r-FFT_SIZE].conjugate()
-        F[m] = abs(F[m])
+            sumr += sample(m-r) * sample(m-r-FFT_SIZE).conjugate()
+        F.append(abs(sumr))
 
     return F
 
 
 F = delay_n_correlate(rx_in)
-print(F.index(max(F)))
 plt.figure()
 plt.plot(F, label='Delay & Correlation')
-plt.axvline(x=F.index(max(F)), label=str(F.index(max(F))), color='red')
-# for i in range(0, )
-# print(np.corrcoef(rx_in[], detection_seq))
+plt.axvline(x=F.index(max(F)), label="max", color='red')
+plt.axvline(x=DELAY, label="symbol start", color='green', ls='--')
+plt.axvline(x=DELAY+GI_NUM, label="GI end", color='blue', ls='--')
+plt.axvline(x=DELAY+GI_NUM+FFT_SIZE, color='green', ls='--')
+plt.axvline(x=DELAY+2*(GI_NUM+FFT_SIZE), color='green', ls='--')
+plt.legend()
 
 # plt.figure()
 # plt.subplot(1, 2, 1)

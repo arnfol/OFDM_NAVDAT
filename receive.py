@@ -12,18 +12,22 @@ Ns = 15       # number of symbols in packet
 FFT_SIZE = 256
 GI_NUM = int(FFT_SIZE*Td/Tu)  # number of samplas in Guard interval
 print("Guard interval size is {}".format(GI_NUM))
-SNRDB = 25
+SNRDB = 10
 
 
-def send_symbol(symbol, mode):
+def f_symbol(data, mode):
 
-    if len(symbol) != int(mode):
+    if len(data) != int(mode):
         raise ValueError
 
     # fill symbol with data in frequency domain
     f_data = np.zeros(FFT_SIZE, complex)
-    f_data[subcarriers[mode]] = symbol
+    f_data[subcarriers[mode]] = data
 
+    return f_data
+
+
+def send_symbol(f_data):
     # translate to time domain
     t_data = np.fft.ifft(f_data)
 
@@ -31,9 +35,10 @@ def send_symbol(symbol, mode):
     return np.hstack([t_data[-GI_NUM:], t_data])
 
 
-tx_out = send_symbol(frame_headers[MODE], MODE)
+tx_f_data = f_symbol(frame_headers[MODE], MODE)
+tx_out = send_symbol(tx_f_data)
 # add one more symbol for better picture
-tx_out = np.hstack([tx_out, send_symbol(frame_headers[MODE], MODE)])
+tx_out = np.hstack([tx_out, send_symbol(tx_f_data)])
 
 
 def add_delay(signal, delay_len=None):
@@ -58,13 +63,22 @@ def add_awgn(signal, snr_db):
     print("RX Signal power: %.4f. Noise power: %.4f" % (signal_power, sigma2))
 
     # Generate complex noise with given variance
-    noise = np.sqrt(sigma2/2) * (np.random.randn(*signal.shape)+1j*np.random.randn(*signal.shape))
+    noise = np.sqrt(sigma2/2) * (np.random.randn(*signal.shape) +
+    1j*np.random.randn(*signal.shape))
+
     return signal + noise
 
 
-# rx_in = add_awgn(delayed, SNRDB)
-rx_in = delayed
-# print(len(rx_in))
+rx_in = add_awgn(delayed, SNRDB)
+# rx_in = delayed
+
+# plt.figure()
+# plt.subplot(1, 2, 1)
+# plt.plot([x.real for x in delayed], label='TX CLEAR')
+# plt.plot([x.real for x in rx_in], label='TX AWGN')
+# plt.subplot(1, 2, 2)
+# plt.plot([x.imag for x in delayed], label='TX CLEAR')
+# plt.plot([x.imag for x in rx_in], label='TX AWGN')
 
 
 # coarse timing offset estimation
@@ -108,8 +122,15 @@ def mmse(samples):
 F1 = delay_n_correlate(rx_in)
 F2 = mmse(rx_in)
 
-print("Delay & correlate maximum at {}".format(F1.index(max(F1))))
-print("MMSE minimum at {}".format(F2.index(min(F2))))
+F1_max = F1.index(max(F1))
+F2_min = FFT_SIZE + GI_NUM + F2[FFT_SIZE+GI_NUM:].index(min(F2[FFT_SIZE+GI_NUM:]))
+print("Delay & correlate maximum at {}, packet starts at {}".format(
+      F1_max, F1_max-FFT_SIZE-GI_NUM))
+print("MMSE minimum at {}, packet starts at {}".format(
+      F2_min, F2_min-FFT_SIZE-GI_NUM))
+
+detected_symbol = rx_in[F2_min-FFT_SIZE-GI_NUM:F2_min]
+detected_fft_window = rx_in[F2_min-FFT_SIZE:F2_min]
 
 plt.figure()
 plt.plot(F1, label='Delay & Correlation')
@@ -121,12 +142,19 @@ plt.axvline(x=DELAY+GI_NUM+FFT_SIZE, color='green', ls='--')
 plt.axvline(x=DELAY+2*(GI_NUM+FFT_SIZE), color='green', ls='--')
 plt.legend()
 
-# plt.figure()
-# plt.subplot(1, 2, 1)
-# plt.plot([x.real for x in delayed], label='TX CLEAR')
-# plt.plot([x.real for x in rx_in], label='TX AWGN')
-# plt.subplot(1, 2, 2)
-# plt.plot([x.imag for x in delayed], label='TX CLEAR')
-# plt.plot([x.imag for x in rx_in], label='TX AWGN')
+# ---------------------------------------------------
+# rx_f_data = np.fft.fft(detected_fft_window)
+rx_f_data = [round(x.real, 0) for x in np.fft.fft(detected_fft_window)]
+
+# x = np.linspace(0, FFT_SIZE, FFT_SIZE)
+plt.figure()
+plt.title("Frequency domain data (real part)")
+plt.plot([y.real for y in tx_f_data], label='TX')
+plt.plot([y.real for y in rx_f_data], label='RX')
+plt.legend()
+
+
+errors = sum([rx_f_data[i].real-tx_f_data[i].real != 0 for i in range(FFT_SIZE)])
+print("Receive errors: {}".format(errors))
 
 plt.show()
